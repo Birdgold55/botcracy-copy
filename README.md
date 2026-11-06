@@ -1,51 +1,82 @@
 # Botcracy
-Botcracy is a discord bot that simulates a government and allows users to vote on roles, create new laws and more.
 
-## Table of Contents
-- [Botcracy Overview](#botcracy-overview)
-  * [Commands](#commands)
-  * [Invite to server](#invite-to-server)
-  * [Resources](#resources)
-- [Developers](#developers)
-  * [Installation](#installation)
-  * [Development](#installation)
+Botcracy è un bot per Discord che simula una democrazia: i membri possono
+proporre leggi e votare per approvarle o abrogarle. Il bot usa comandi slash e
+un'interfaccia interamente in italiano.
 
-## Botcracy Overview
+## Funzionalità
 
-### Commands
-- #help - DM's all bot commands to member
-- #create-law - Stars the process on creating a new law
-- #repeal-law - Starts the process to repeal a law
-- #executive-order - Creates a new executive order - Requires the President role
-- #register-to-vote - Gives the member the voter role - Will be required for voting in the future
-- #voter-count - Provides the number of members with the voter role
+- `/aiuto` — mostra i comandi disponibili.
+- `/legge-crea` — propone una legge e avvia la votazione.
+- `/legge-abroga` — propone l'abrogazione di una legge.
+- `/legge` — mostra i dettagli e i risultati della votazione di una legge.
+- `/leggi` — mostra le leggi in vigore nel server.
 
-### Invite to server
-https://discord.com/api/oauth2/authorize?client_id=783942469581537280&permissions=397553032256&scope=bot%20applications.commands
+Ogni membro può esprimere un voto per votazione: se cambia reazione, viene
+conteggiato il voto più recente. Le votazioni durano un minuto e richiedono
+almeno un voto. Per modificare questi valori, cambia `VOTING_DURATION` e
+`MINIMUM_VOTES` in `bot.py`.
 
-### Resources
-- Website - https://www.botcracy.com/
-- top.gg - https://top.gg/bot/783942469581537280
-- discord.bots.gg - https://discord.bots.gg/bots/783942469581537280
-- discordbotlist - https://discordbotlist.com/bots/botcracy
+## Requisiti
 
-- Discord.js Documentation - https://discord.js.org/#/docs/discord.js/main/general/welcome
-- Trello Board - https://trello.com/b/zcYAlAjQ/development
+Python 3.10 o versione successiva e un database MongoDB.
 
-## Developers
+## Installazione e avvio
 
-### Installation
+1. Clona il repository, crea un ambiente virtuale e installa le dipendenze:
 
-Clone the repository `git clone https://github.com/rjthacker/botcracy.git`
+   ```sh
+   git clone https://github.com/Birdgold55/botcracy-copy.git
+   cd botcracy-copy
+   python -m venv .venv
+   ```
 
-Verify that you are running `Node v18.12.0` or higher with `node -v`
+   Attiva l'ambiente virtuale:
 
-Run `npm ci && npm i nodemon`
+   ```powershell
+   # Windows PowerShell
+   .venv\Scripts\Activate.ps1
+   ```
 
-Request `.env` files, once aquired they will need to be placed in `root` directory
+   ```sh
+   # macOS o Linux
+   source .venv/bin/activate
+   ```
 
-### Development
+2. Installa le dipendenze:
 
-`npm run prod` for production testing bot
+   ```sh
+   python -m pip install -r requirements.txt
+   ```
 
-`npm run dev` for development testing bot
+3. Crea un file `.env` nella cartella principale del progetto:
+
+   ```env
+   BOT_TOKEN=inserisci-il-token-del-bot
+   CONNECTION_URL=inserisci-lindirizzo-del-database-mongodb
+   BOT_ENV=development
+   GUILD_ID=inserisci-lid-del-server-discord
+   ```
+
+   `BOT_TOKEN` si crea nel portale sviluppatori di Discord. `CONNECTION_URL` è
+   l'indirizzo del database MongoDB e deve includere il nome del database.
+   Durante lo sviluppo, `BOT_ENV=development` registra i comandi nel server
+   indicato da `GUILD_ID`. Per registrarli globalmente, imposta
+   `BOT_ENV=production`; la loro propagazione può richiedere tempo.
+
+4. Avvia il bot:
+
+   ```sh
+   python bot.py
+   ```
+
+Per aggiungere il bot a un server, abilita gli ambiti `bot` e
+`applications.commands` e concedigli i permessi per inviare messaggi e aggiungere
+reazioni. Non pubblicare né condividere il token o il file `.env`.
+
+## Dati e privacy
+
+Le leggi vengono salvate nella raccolta MongoDB `active-laws`. Per ogni legge
+sono conservati il server, il nome, la descrizione, l'ID Discord del proponente,
+la data di approvazione e i risultati della votazione. Il bot legge anche i
+vecchi dati salvati con il formato numerico degli ID server.
