@@ -3,6 +3,7 @@ production-files
 venv
 __pycache__
 *.py[cod]
+*.sqlite3
 .env
 .env.development
 .env.production

@@ -1,16 +1,65 @@
 import asyncio
+import importlib.util
 import logging
 import os
+import sqlite3
+import subprocess
+import sys
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterator
+
+
+PROJECT_DIR = Path(__file__).resolve().parent
+REQUIREMENTS_FILE = PROJECT_DIR / "requirements.txt"
+ENV_FILE = PROJECT_DIR / ".env"
+DATABASE_FILE = PROJECT_DIR / "leggi.sqlite3"
+
+
+def install_dependencies_if_needed() -> None:
+    if importlib.util.find_spec("discord") is not None and importlib.util.find_spec(
+        "dotenv"
+    ) is not None:
+        return
+
+    print("Installazione delle librerie necessarie al primo avvio...")
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE)],
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            "Non riesco a installare le librerie. Controlla la connessione "
+            "Internet e riprova."
+        ) from error
+
+
+def create_environment_file_if_needed() -> None:
+    if ENV_FILE.exists():
+        return
+
+    ENV_FILE.write_text(
+        "BOT_TOKEN=\nBOT_ENV=production\nGUILD_ID=\n",
+        encoding="utf-8",
+    )
+    print(
+        "Ho creato il file .env. Aprilo con Blocco note, inserisci il token "
+        "del bot Discord dopo BOT_TOKEN=, salva il file e rilancia py bot.py."
+    )
+    raise SystemExit(0)
+
+
+install_dependencies_if_needed()
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-from pymongo import MongoClient
 
 
-load_dotenv()
+load_dotenv(ENV_FILE)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -23,44 +72,125 @@ YES_EMOJI = "👍"
 NO_EMOJI = "👎"
 
 TOKEN = os.getenv("BOT_TOKEN")
-MONGODB_URL = os.getenv("CONNECTION_URL")
 BOT_ENV = os.getenv("BOT_ENV", os.getenv("NODE_ENV", "production")).lower()
 GUILD_ID = os.getenv("GUILD_ID")
 
-if not TOKEN:
-    raise RuntimeError("Variabile BOT_TOKEN mancante nel file .env.")
-if not MONGODB_URL:
-    raise RuntimeError("Variabile CONNECTION_URL mancante nel file .env.")
+create_environment_file_if_needed()
+
+if not TOKEN or not TOKEN.strip():
+    raise RuntimeError(
+        "Il token BOT_TOKEN non è impostato. Apri il file .env, inserisci "
+        "il token del bot Discord dopo BOT_TOKEN= e rilancia py bot.py."
+    )
 if BOT_ENV == "development" and not GUILD_ID:
     raise RuntimeError("Imposta GUILD_ID per registrare i comandi di sviluppo.")
-
-mongo_client = MongoClient(MONGODB_URL, serverSelectionTimeoutMS=5000)
-laws_collection = mongo_client.get_default_database()["active-laws"]
 
 intents = discord.Intents.default()
 intents.guilds = True
 intents.guild_reactions = True
-bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 
 
-def _guild_query(guild_id: int) -> dict:
-    # Le versioni precedenti del bot salvavano l'ID Discord come Number.
-    return {"guildID": {"$in": [str(guild_id), float(guild_id)]}}
+@contextmanager
+def connect_database() -> Iterator[sqlite3.Connection]:
+    connection = sqlite3.connect(DATABASE_FILE)
+    connection.row_factory = sqlite3.Row
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def initialize_database() -> None:
+    with connect_database() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS leggi (
+                id INTEGER PRIMARY KEY,
+                guild_id TEXT NOT NULL,
+                guild_name TEXT NOT NULL,
+                name TEXT NOT NULL COLLATE NOCASE,
+                description TEXT NOT NULL,
+                representative TEXT NOT NULL,
+                created_date TEXT NOT NULL,
+                total_votes INTEGER NOT NULL,
+                yes INTEGER NOT NULL,
+                no INTEGER NOT NULL,
+                UNIQUE (guild_id, name)
+            )
+            """
+        )
 
 
 async def find_laws(guild_id: int, name: str | None = None) -> list[dict]:
-    query = _guild_query(guild_id)
-    if name is not None:
-        query["name"] = name.strip().lower()
-    return await asyncio.to_thread(lambda: list(laws_collection.find(query)))
+    def query_database() -> list[dict]:
+        with connect_database() as connection:
+            if name is None:
+                cursor = connection.execute(
+                    "SELECT * FROM leggi WHERE guild_id = ? ORDER BY name",
+                    (str(guild_id),),
+                )
+            else:
+                cursor = connection.execute(
+                    "SELECT * FROM leggi WHERE guild_id = ? AND name = ?",
+                    (str(guild_id), name.strip()),
+                )
+            return [dict(row) for row in cursor.fetchall()]
+
+    return await asyncio.to_thread(query_database)
 
 
 async def save_law(law: dict) -> None:
-    await asyncio.to_thread(laws_collection.insert_one, law)
+    def insert_law() -> None:
+        with connect_database() as connection:
+            connection.execute(
+                """
+                INSERT INTO leggi (
+                    guild_id, guild_name, name, description, representative,
+                    created_date, total_votes, yes, no
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    law["guild_id"],
+                    law["guild_name"],
+                    law["name"],
+                    law["description"],
+                    law["representative"],
+                    law["created_date"],
+                    law["total_votes"],
+                    law["yes"],
+                    law["no"],
+                ),
+            )
+
+    await asyncio.to_thread(insert_law)
 
 
 async def remove_law(law_id) -> None:
-    await asyncio.to_thread(laws_collection.delete_one, {"_id": law_id})
+    def delete_law() -> None:
+        with connect_database() as connection:
+            connection.execute("DELETE FROM leggi WHERE id = ?", (law_id,))
+
+    await asyncio.to_thread(delete_law)
+
+
+class Botcracy(commands.Bot):
+    async def setup_hook(self) -> None:
+        await asyncio.to_thread(initialize_database)
+
+        if BOT_ENV == "development" and GUILD_ID:
+            guild = discord.Object(id=int(GUILD_ID))
+            self.tree.copy_global_to(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+        else:
+            synced = await self.tree.sync()
+        logger.info("Registrati %s comandi slash.", len(synced))
+
+
+bot = Botcracy(command_prefix=commands.when_mentioned, intents=intents)
 
 
 async def report_interaction_error(
@@ -159,13 +289,13 @@ class CreateLawModal(discord.ui.Modal, title="Proponi una legge"):
         if result == "approvata":
             await save_law(
                 {
-                    "guildID": str(interaction.guild_id),
-                    "guildName": interaction.guild.name,
+                    "guild_id": str(interaction.guild_id),
+                    "guild_name": interaction.guild.name,
                     "name": str(self.name).strip().lower(),
                     "description": str(self.description).strip(),
                     "representative": str(interaction.user.id),
-                    "createdDate": datetime.now(timezone.utc),
-                    "totalVotes": total,
+                    "created_date": datetime.now(timezone.utc).isoformat(),
+                    "total_votes": total,
                     "yes": yes_votes,
                     "no": no_votes,
                 }
@@ -210,7 +340,7 @@ class RepealLawModal(discord.ui.Modal, title="Proponi l'abrogazione"):
         )
         result = vote_result(yes_votes, no_votes, total)
         if result == "approvata":
-            await remove_law(existing[0]["_id"])
+            await remove_law(existing[0]["id"])
             message = f"La legge **{self.name}** è stata abrogata."
         elif result == "insufficiente":
             message = f"Votazione annullata: era necessario almeno {MINIMUM_VOTES} voto."
@@ -226,23 +356,6 @@ class RepealLawModal(discord.ui.Modal, title="Proponi l'abrogazione"):
         self, interaction: discord.Interaction, error: Exception
     ) -> None:
         await report_interaction_error(interaction, error)
-
-
-@bot.event
-async def setup_hook() -> None:
-    try:
-        await asyncio.to_thread(mongo_client.admin.command, "ping")
-    except Exception:
-        logger.exception("Impossibile connettersi a MongoDB.")
-        raise
-
-    if BOT_ENV == "development":
-        guild = discord.Object(id=int(GUILD_ID))
-        bot.tree.copy_global_to(guild=guild)
-        synced = await bot.tree.sync(guild=guild)
-    else:
-        synced = await bot.tree.sync()
-    logger.info("Registrati %s comandi slash.", len(synced))
 
 
 @bot.event
@@ -305,12 +418,11 @@ async def show_law_command(
         await interaction.followup.send("Non trovo una legge con questo nome.")
         return
     law = laws[0]
-    date_value = law.get("createdDate")
-    date_text = (
-        date_value.strftime("%d/%m/%Y")
-        if isinstance(date_value, datetime)
-        else "Data non disponibile"
-    )
+    date_value = law.get("created_date")
+    try:
+        date_text = datetime.fromisoformat(date_value).strftime("%d/%m/%Y")
+    except (TypeError, ValueError):
+        date_text = "Data non disponibile"
     embed = discord.Embed(
         title=law.get("name", "Legge").title(),
         description=law.get("description", "Nessuna descrizione.")[:4096],
@@ -357,7 +469,5 @@ async def show_laws_command(interaction: discord.Interaction) -> None:
 
 
 if __name__ == "__main__":
-    try:
-        bot.run(TOKEN)
-    finally:
-        mongo_client.close()
+    create_environment_file_if_needed()
+    bot.run(TOKEN)

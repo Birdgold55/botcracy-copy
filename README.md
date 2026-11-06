@@ -1,8 +1,8 @@
 # Botcracy
 
 Botcracy è un bot per Discord che simula una democrazia: i membri possono
-proporre leggi e votare per approvarle o abrogarle. Il bot usa comandi slash e
-un'interfaccia interamente in italiano.
+proporre leggi e votare per approvarle o abrogarle. Comandi e messaggi del bot
+sono in italiano.
 
 ## Funzionalità
 
@@ -12,67 +12,44 @@ un'interfaccia interamente in italiano.
 - `/legge` — mostra i dettagli e i risultati della votazione di una legge.
 - `/leggi` — mostra le leggi in vigore nel server.
 
-Ogni membro può esprimere un voto per votazione: se cambia reazione, viene
-conteggiato il voto più recente. Le votazioni durano un minuto e richiedono
+Ogni membro può votare una volta; se cambia idea reagendo con l'altra emoji,
+viene conteggiato il voto più recente. Le votazioni durano un minuto e richiedono
 almeno un voto. Per modificare questi valori, cambia `VOTING_DURATION` e
 `MINIMUM_VOTES` in `bot.py`.
 
-## Requisiti
+## Scarica e avvia su Windows
 
-Python 3.10 o versione successiva e un database MongoDB.
+1. Scarica il progetto come archivio ZIP dal pulsante **Code → Download ZIP**
+   su GitHub ed estrailo in una cartella.
+2. Nel portale sviluppatori di Discord, crea un'applicazione, aggiungi un bot
+   e copia il suo token.
+3. Apri il **Prompt dei comandi** nella cartella estratta. Al primo avvio, il
+   bot installa le librerie necessarie e crea il file `.env` se non esiste:
 
-## Installazione e avvio
-
-1. Clona il repository, crea un ambiente virtuale e installa le dipendenze:
-
-   ```sh
-   git clone https://github.com/Birdgold55/botcracy-copy.git
-   cd botcracy-copy
-   python -m venv .venv
+   ```cmd
+   py bot.py
    ```
 
-   Attiva l'ambiente virtuale:
+4. Apri `.env` con Blocco note, inserisci il token dopo `BOT_TOKEN=`, salva e
+   rilancia `py bot.py`. Non racchiudere il token tra virgolette e non
+   condividerlo.
+5. Invita il bot nel tuo server Discord abilitando gli ambiti `bot` e
+   `applications.commands` e i permessi per inviare messaggi e aggiungere
+   reazioni.
 
-   ```powershell
-   # Windows PowerShell
-   .venv\Scripts\Activate.ps1
-   ```
+Serve Python 3.10 o successivo, installato da
+[python.org](https://www.python.org/downloads/) con il comando `py` disponibile.
+Al primo avvio è necessaria una connessione Internet per installare le librerie.
+I comandi slash vengono registrati globalmente e Discord potrebbe impiegare un
+po' di tempo a mostrarli.
 
-   ```sh
-   # macOS o Linux
-   source .venv/bin/activate
-   ```
+## Database e privacy
 
-2. Installa le dipendenze:
-
-   ```sh
-   python -m pip install -r requirements.txt
-   ```
-
-3. Crea un file `.env` nella cartella principale del progetto:
-
-   ```env
-   BOT_TOKEN=inserisci-il-token-del-bot
-   CONNECTION_URL=inserisci-lindirizzo-del-database-mongodb
-   BOT_ENV=development
-   GUILD_ID=inserisci-lid-del-server-discord
-   ```
-
-   `BOT_TOKEN` si crea nel portale sviluppatori di Discord. `CONNECTION_URL` è
-   l'indirizzo del database MongoDB e deve includere il nome del database.
-   Durante lo sviluppo, `BOT_ENV=development` registra i comandi nel server
-   indicato da `GUILD_ID`. Per registrarli globalmente, imposta
-   `BOT_ENV=production`; la loro propagazione può richiedere tempo.
-
-4. Avvia il bot:
-
-   ```sh
-   python bot.py
-   ```
-
-Per aggiungere il bot a un server, abilita gli ambiti `bot` e
-`applications.commands` e concedigli i permessi per inviare messaggi e aggiungere
-reazioni. Non pubblicare né condividere il token o il file `.env`.
+Non serve configurare MongoDB o un servizio esterno: le leggi vengono salvate
+automaticamente nel file locale `leggi.sqlite3`. Il file rimane nella cartella
+del bot, anche dopo averlo chiuso. Non pubblicare il token o il file `.env`.
+Se ospiti il bot su un servizio online, assicurati che conservi il file del
+database tra un riavvio e l'altro.
 
 ## Dati e privacy
 
